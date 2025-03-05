@@ -1,6 +1,3 @@
-
-
-// 2. lib/app.js - Express application
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
@@ -13,7 +10,7 @@ async function connectToDatabase() {
   if (cachedDb && mongoose.connection.readyState === 1) {
     return cachedDb;
   }
-
+  
   try {
     // Set connection options to handle serverless environment
     const options = {
@@ -22,7 +19,7 @@ async function connectToDatabase() {
       serverSelectionTimeoutMS: 5000,
       bufferCommands: false,
     };
-
+    
     const client = await mongoose.connect(process.env.MONGODB_URI, options);
     console.log('MongoDB connected...');
     cachedDb = client;
@@ -42,7 +39,7 @@ const app = express();
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*', // Allow your frontend URL
+  origin: '*', // Allow your frontend URL
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -103,6 +100,31 @@ app.get('/api/companies/region/:name', async (req, res) => {
     res.json(region);
   } catch (error) {
     console.error('Error fetching region data:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Add a USA companies route to match your frontend function
+app.get('/api/companies/usa', async (req, res) => {
+  try {
+    await connectToDatabase();
+    const data = await SaasCompany.findOne();
+    
+    if (!data) {
+      return res.status(404).json({ message: 'No data found' });
+    }
+    
+    const usaRegion = data.regions.find(region => 
+      region.name.toLowerCase().includes('usa') || 
+      region.name.toLowerCase().includes('united states'));
+    
+    if (!usaRegion) {
+      return res.status(404).json({ message: 'USA region not found' });
+    }
+    
+    res.json(usaRegion);
+  } catch (error) {
+    console.error('Error fetching USA data:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
