@@ -291,6 +291,63 @@ app.get('/api/companies/:countryName', async (req, res) => {
   }
 });
 
+
+const notificationSchema = new mongoose.Schema({
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true,
+    lowercase: true
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
+// Fix: Update the collection name to match what's in MongoDB
+const Notification = mongoose.model('notification', notificationSchema, 'notification_subscriptions');
+
+// Route to subscribe for notifications
+app.post('/api/notifications/subscribe', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
+    
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ message: 'Invalid email format' });
+    }
+    
+    await connectToDatabase();
+    
+    // Log connection state and database name for debugging
+    console.log('MongoDB connection state:', mongoose.connection.readyState);
+    console.log('Connected to database:', mongoose.connection.db.databaseName);
+    
+    // Check if email already exists
+    const existingSubscription = await Notification.findOne({ email });
+    
+    if (existingSubscription) {
+      return res.status(200).json({ message: 'Email already subscribed' });
+    }
+    
+    // Create new subscription
+    const subscription = new Notification({ email });
+    const result = await subscription.save();
+    
+    console.log(`New notification subscription: ${email}, saved with ID: ${result._id}`);
+    return res.status(201).json({ message: 'Successfully subscribed' });
+  } catch (error) {
+    console.error('Error in subscription endpoint:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
 // New route to get financial data for a specific company by ticker
 app.get('/api/financials/:ticker', async (req, res) => {
   try {
