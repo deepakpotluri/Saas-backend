@@ -350,7 +350,7 @@ app.get('/api/companies/:countryName', async (req, res) => {
   }
 });
 
-
+// Schema for notifications about all countries data (original collection)
 const notificationSchema = new mongoose.Schema({
   email: {
     type: String,
@@ -358,6 +358,10 @@ const notificationSchema = new mongoose.Schema({
     unique: true,
     trim: true,
     lowercase: true
+  },
+  phone: {
+    type: String,
+    trim: true
   },
   createdAt: {
     type: Date,
@@ -368,10 +372,36 @@ const notificationSchema = new mongoose.Schema({
 // Fix: Update the collection name to match what's in MongoDB
 const Notification = mongoose.model('notification', notificationSchema, 'notification_subscriptions');
 
-// Route to subscribe for notifications
+// Define a new schema for metrics update notifications
+const metricsNotificationSchema = new mongoose.Schema({
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+    trim: true,
+    lowercase: true
+  },
+  phone: {
+    type: String,
+    trim: true
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+
+// Create the model for the new collection
+const MetricsNotification = mongoose.model(
+  'metricsnotification', 
+  metricsNotificationSchema, 
+  'metrics_update_subscriptions'
+);
+
+// Updated route to handle both collections based on user preferences
 app.post('/api/notifications/subscribe', async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, phone, notifyAllCountries, notifyMetricsUpdates } = req.body;
     
     if (!email) {
       return res.status(400).json({ message: 'Email is required' });
@@ -389,19 +419,71 @@ app.post('/api/notifications/subscribe', async (req, res) => {
     console.log('MongoDB connection state:', mongoose.connection.readyState);
     console.log('Connected to database:', mongoose.connection.db.databaseName);
     
-    // Check if email already exists
-    const existingSubscription = await Notification.findOne({ email });
+    // Prepare user data object for both collections
+    const userData = {
+      email: email,
+      phone: phone || undefined
+    };
+
+    let results = {
+      allCountries: false,
+      metricsUpdates: false
+    };
     
-    if (existingSubscription) {
-      return res.status(200).json({ message: 'Email already subscribed' });
+    // If user wants notifications for all countries data
+    if (notifyAllCountries) {
+      try {
+        // Check if email already exists in notification_subscriptions
+        const existingSubscription = await Notification.findOne({ email });
+        
+        if (existingSubscription) {
+          // Update phone if it changed
+          if (phone && existingSubscription.phone !== phone) {
+            await Notification.updateOne({ email }, { phone });
+          }
+          results.allCountries = 'updated';
+        } else {
+          // Create new subscription
+          const subscription = new Notification(userData);
+          await subscription.save();
+          results.allCountries = 'created';
+        }
+      } catch (error) {
+        console.error('Error saving to notification_subscriptions:', error);
+        throw error;
+      }
     }
     
-    // Create new subscription
-    const subscription = new Notification({ email });
-    const result = await subscription.save();
+    // If user wants notifications for metrics updates
+    if (notifyMetricsUpdates) {
+      try {
+        // Check if email already exists in metrics_update_subscriptions
+        const existingMetricsSubscription = await MetricsNotification.findOne({ email });
+        
+        if (existingMetricsSubscription) {
+          // Update phone if it changed
+          if (phone && existingMetricsSubscription.phone !== phone) {
+            await MetricsNotification.updateOne({ email }, { phone });
+          }
+          results.metricsUpdates = 'updated';
+        } else {
+          // Create new subscription
+          const metricsSubscription = new MetricsNotification(userData);
+          await metricsSubscription.save();
+          results.metricsUpdates = 'created';
+        }
+      } catch (error) {
+        console.error('Error saving to metrics_update_subscriptions:', error);
+        throw error;
+      }
+    }
     
-    console.log(`New notification subscription: ${email}, saved with ID: ${result._id}`);
-    return res.status(201).json({ message: 'Successfully subscribed' });
+    console.log(`Subscription results for ${email}:`, results);
+    return res.status(201).json({ 
+      message: 'Successfully subscribed',
+      results 
+    });
+    
   } catch (error) {
     console.error('Error in subscription endpoint:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
